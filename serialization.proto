@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package storage;
+
+option go_package = "github.com/AshikBN/swiftdb";
+
+enum Command {
+  PUT = 0;
+  DELETE = 1;
+  WRITE_SST = 2;
+}
+
+message LSMEntry {
+  string key = 1;
+  Command command = 2;
+  optional bytes value = 3;
+  int64 timestamp = 4;
+}
+
+message BloomFilter {
+ repeated bool bitset = 1;
+ int64 size = 2;
+}
+
+message IndexEntry {
+  string key = 1;
+  int64 offset = 2;
+}
+
+message Index {
+  repeated IndexEntry entries = 1;   
+}
+
+message WALEntry {
+  string key = 1;
+  Command command = 2;
+  optional bytes value = 3;
+  int64 timestamp = 4;
+}
