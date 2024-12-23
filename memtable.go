@@ -86,7 +86,12 @@ func (m *Memtable) Clear() {
 	m.size = 0
 }
 
-func (m *Memtable) getEntries() []*LSMEntry {
+// Get the number of entries in the Memtable. Includes tombstones. Not thread-safe.
+func (m *Memtable) Len() int {
+	return m.data.Len()
+}
+
+func (m *Memtable) GetEntries() []*LSMEntry {
 	var entries []*LSMEntry
 	iter := m.data.Front()
 
