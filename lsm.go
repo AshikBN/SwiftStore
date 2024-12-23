@@ -137,6 +137,150 @@ func (l *LSMTree) Close() error {
 
 }
 
+func (l *LSMTree) Put(key string, value []byte) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	//write to WAL before writing to memtable. we dont need to write to wal if in recovery
+	if !l.inRecovery {
+		l.wal.WriteEntry(mustMarshal(&WALEntry{
+			Key:       key,
+			Value:     value,
+			Command:   Command_PUT,
+			Timestamp: time.Now().UnixNano(),
+		}))
+	}
+
+	l.memtable.Put(key, value)
+
+	//check if the memtable size reached the max size,if so it will flushed to sstable
+	if l.memtable.SizeInBytes() > l.maxMemtableSize {
+		l.flushingQueueMu.Lock()
+		l.flushingQueue = append(l.flushingQueue, l.memtable)
+		l.flushingQueueMu.Unlock()
+
+		l.flushingChan <- l.memtable
+		l.memtable = NewMemtable()
+
+	}
+
+	return nil
+}
+
+// delete a key-value pair from LSMtree
+func (l *LSMTree) Delete(key string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	//write to WAL before writing to memtable. we dont need to write to wal if in recovery
+	if !l.inRecovery {
+		l.wal.WriteEntry(mustMarshal(&WALEntry{
+			Key:       key,
+			Command:   Command_DELETE,
+			Timestamp: time.Now().UnixNano(),
+		}))
+	}
+
+	l.memtable.Delete(key)
+
+	//check if the memtable size reached the max size,if so it will flushed to sstable
+	if l.memtable.SizeInBytes() > l.maxMemtableSize {
+		l.flushingQueueMu.Lock()
+		l.flushingQueue = append(l.flushingQueue, l.memtable)
+		l.flushingQueueMu.Unlock()
+
+		l.flushingChan <- l.memtable
+		l.memtable = NewMemtable()
+
+	}
+
+	return nil
+}
+
+// get the value for a give keu from the LSMTree,
+// first search for the key in the memtable,then from the sstable
+// return nil if the key is not present
+func (l *LSMTree) Get(key string) ([]byte, error) {
+	l.mu.RLock()
+
+	value := l.memtable.Get(key)
+	if value != nil {
+		l.mu.RUnlock()
+		return handleValue(value)
+	}
+
+	l.flushingQueueMu.RLock()
+	for i := len(l.flushingQueue) - 1; i >= 0; i-- {
+		value = l.flushingQueue[i].Get(key)
+		if value != nil {
+			l.flushingQueueMu.RUnlock()
+			return handleValue(value)
+		}
+
+	}
+	l.flushingQueueMu.RUnlock()
+
+	for level := range l.levels {
+		l.levels[level].mu.RLock()
+		for i := len(l.levels[level].sstables) - 1; i >= 0; i-- {
+			value, err := l.levels[level].sstables[i].Get(key)
+			if err != nil {
+				l.levels[level].mu.RUnlock()
+				return nil, err
+			}
+			if value != nil {
+				l.levels[level].mu.RUnlock()
+				return handleValue(value)
+			}
+		}
+		l.levels[level].mu.RUnlock()
+	}
+
+	return nil, nil
+
+}
+
+// it returns all the entries in the lsmtree that have the keys in the range
+// startkey and endkey. the entries are returned in the sorted order of keys
+func (l *LSMTree) rangeScan(startKey string, endKey string) ([]KVPair, error) {
+	ranges := [][]*LSMEntry{}
+
+	//take all the locks together to ensure a consistent view of LSMTree for the range scan
+
+	l.mu.RLock()
+	defer l.mu.Unlock()
+
+	for _, level := range l.levels {
+		level.mu.RLock()
+		defer level.mu.RUnlock()
+	}
+
+	l.flushingQueueMu.RLock()
+	defer l.flushingQueueMu.RUnlock()
+
+	entries := l.memtable.RangeScan(startKey, endKey)
+	ranges = append(ranges, entries)
+
+	for i := len(l.flushingQueue) - 1; i >= 0; i-- {
+		entries = l.flushingQueue[i].RangeScan(startKey, endKey)
+		ranges = append(ranges, entries)
+	}
+
+	for _, level := range l.levels {
+		for i := len(level.sstables) - 1; i >= 0; i-- {
+			entries, err := level.sstables[i].RangeScan(startKey, endKey)
+			if err != nil {
+				return nil, err
+			}
+			ranges = append(ranges, entries)
+		}
+
+	}
+
+	return mergeRanges(ranges), nil
+
+}
+
 // loads all the sstables from disk to memory.
 // sorts the sstables by sequence number
 // this function is called on startup
