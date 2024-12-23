@@ -477,7 +477,7 @@ func (l *LSMTree) flushMemtable(memtable *Memtable) {
 	sstableFilename := l.getSSTableFilename(0)
 
 	//serialize and store the sstable on the disk with filename
-	sstable, err := SerializeToSSTable(memtable.getEntries(), sstableFilename)
+	sstable, err := SerializeToSSTable(memtable.GetEntries(), sstableFilename)
 	if err != nil {
 		panic(err)
 	}
