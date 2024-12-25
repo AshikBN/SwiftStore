@@ -43,7 +43,7 @@ func SerializeToSSTable(messages []*LSMEntry, filename string) (*SSTable, error)
 	return &SSTable{bloomFilter: bloomFilter, index: index, file: file, dataOffset: dataOffset}, nil
 }
 
-func openSSTable(filename string) (*SSTable, error) {
+func OpenSSTable(filename string) (*SSTable, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -228,6 +228,10 @@ func (iterator *SSTableIterator) Next() *SSTableIterator {
 	mustUnmarshal(lsmEntryData, iterator.Value)
 
 	return iterator
+}
+
+func (s *SSTable) Close() error {
+	return s.file.Close()
 }
 
 func (iterator *SSTableIterator) Close() {
