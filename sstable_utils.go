@@ -19,7 +19,7 @@ func buildMetadataAndEntriesBuffer(messages []*LSMEntry) (*BloomFilter, *Index, 
 
 		bloomFilter.Add([]byte(message.Key))
 		index = append(index, &IndexEntry{Key: message.Key, Offset: int64(currentOffset)})
-		err := binary.Write(entriesBuffer, binary.BigEndian, entrySize)
+		err := binary.Write(entriesBuffer, binary.LittleEndian, entrySize)
 		if err != nil {
 			return nil, nil, nil, err
 		}

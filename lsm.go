@@ -313,7 +313,7 @@ func (l *LSMTree) loadSSTablesFromDisk() error {
 			continue
 		}
 
-		sstable, err := openSSTable(l.directory + "/" + file.Name())
+		sstable, err := OpenSSTable(l.directory + "/" + file.Name())
 		if err != nil {
 			return err
 		}
