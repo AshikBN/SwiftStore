@@ -403,7 +403,9 @@ func (l *LSMTree) backgroundMemtableFlushing() error {
 	for {
 		select {
 		case <-l.ctx.Done():
-			return nil
+			if len(l.flushingChan) == 0 {
+				return nil
+			}
 		case memtable := <-l.flushingChan:
 			l.flushMemtable(memtable)
 		}
