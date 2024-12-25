@@ -364,6 +364,9 @@ func (l *LSMTree) getSequenceNumber(filename string) uint64 {
 func (l *LSMTree) initializeCurrentSquenceNumber() error {
 	var maxSquence uint64
 	for _, level := range l.levels {
+		if len(level.sstables) == 0 {
+			continue
+		}
 		squence := l.getSequenceNumber(level.sstables[len(level.sstables)-1].file.Name())
 		if squence > maxSquence {
 			maxSquence = squence
@@ -400,9 +403,7 @@ func (l *LSMTree) backgroundMemtableFlushing() error {
 	for {
 		select {
 		case <-l.ctx.Done():
-			if len(l.flushingChan) == 0 {
-				return nil
-			}
+			return nil
 		case memtable := <-l.flushingChan:
 			l.flushMemtable(memtable)
 		}
@@ -551,9 +552,9 @@ func (l *LSMTree) processWALEntry(entry *gw.WAL_Entry) error {
 	mustUnmarshal(entry.GetData(), walEntry)
 	switch walEntry.Command {
 	case Command_PUT:
-		return nil //?
+		return l.Put(walEntry.Key, walEntry.Value)
 	case Command_DELETE:
-		return nil
+		return l.Delete(walEntry.Key)
 	case Command_WRITE_SST:
 		return errors.New("unexpected write sst command to WAL")
 	default:
